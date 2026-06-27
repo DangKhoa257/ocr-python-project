@@ -1,6 +1,6 @@
-from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
-from typing import Union, Tuple
+from PIL import Image, ImageEnhance, ImageFilter
+from typing import Union
 
 class ImagePreprocessor:
     MAX_SIZE = 1024
@@ -10,76 +10,77 @@ class ImagePreprocessor:
     
     @staticmethod
     def load_image(uploaded_file) -> Image.Image:
+        # Load ảnh từ file upload sang định dạng RGB
         return Image.open(uploaded_file).convert("RGB")
     
     def load_and_normalize(self, uploaded_file) -> np.ndarray:
+        # Load, resize tự động và chuẩn hóa pixel về khoảng [0.0, 1.0]
         image = self.load_image(uploaded_file)
         image.thumbnail((self.max_size, self.max_size), Image.Resampling.LANCZOS)
-        
         img_array = np.array(image)
-        normalized_array = img_array / 255.0
-        
-        return normalized_array
+        return img_array / 255.0
     
     @staticmethod
-    def denoise(image: Image.Image) -> Image.Image:
-        # Lọc nhiễu bằng bộ lọc hạt (MedianFilter) của PIL
-        return image.filter(ImageFilter.MedianFilter(size=3))
+    def denoise(image: Image.Image, size: int = 3) -> Image.Image:
+        # Khử nhiễu bằng MedianFilter (giữ nguyên độ nét viền chữ)
+        return image.filter(ImageFilter.MedianFilter(size=size))
     
     @staticmethod
     def enhance_contrast(image: Image.Image, factor: float = 1.5) -> Image.Image:
-        enhancer = ImageEnhance.Contrast(image)
-        return enhancer.enhance(factor)
+        # Tăng độ tương phản (làm chữ tách biệt khỏi nền)
+        return ImageEnhance.Contrast(image).enhance(factor)
     
     @staticmethod
     def enhance_brightness(image: Image.Image, factor: float = 1.1) -> Image.Image:
-        enhancer = ImageEnhance.Brightness(image)
-        return enhancer.enhance(factor)
+        # Điều chỉnh độ sáng
+        return ImageEnhance.Brightness(image).enhance(factor)
     
     @staticmethod
     def enhance_sharpness(image: Image.Image, factor: float = 2.0) -> Image.Image:
-        enhancer = ImageEnhance.Sharpness(image)
-        return enhancer.enhance(factor)
+        # Tăng độ sắc nét cho viền chữ
+        return ImageEnhance.Sharpness(image).enhance(factor)
     
     @staticmethod
     def apply_gaussian_blur(image: Image.Image, radius: int = 1) -> Image.Image:
+        # Làm mờ (tùy chọn)
         return image.filter(ImageFilter.GaussianBlur(radius=radius))
     
     @staticmethod
     def convert_to_grayscale(image: Image.Image) -> Image.Image:
+        # Chuyển đổi sang ảnh xám
         return image.convert("L")
     
+    @staticmethod
+    def apply_sharpen(image: Image.Image) -> Image.Image:
+        # Áp dụng bộ lọc SHARPEN có sẵn của PIL
+        return image.filter(ImageFilter.SHARPEN)
+    
     def apply_full_preprocessing(self, image: Image.Image) -> Image.Image:
-        # Bước 1: Khử nhiễu
-        image = self.denoise(image)
-        
-        # Bước 2: Tăng độ nét
-        image = self.enhance_sharpness(image, factor=1.5)
-        
-        # Bước 3: Chuyển sang ảnh xám
+        # Luồng xử lý tiêu chuẩn đầy đủ các bước
+        image = self.denoise(image, size=3)
         image = self.convert_to_grayscale(image)
-        
-        # Bước 4: Tăng độ tương phản
         image = self.enhance_contrast(image, factor=1.3)
-        
-        return image
+        return self.enhance_sharpness(image, factor=1.5)
     
     def apply_light_preprocessing(self, image: Image.Image) -> Image.Image:
-        # Chuyển sang ảnh xám
+        # Luồng xử lý nhẹ và nhanh (bỏ qua bước khử nhiễu)
         image = self.convert_to_grayscale(image)
-        
-        # Tăng độ tương phản
         image = self.enhance_contrast(image, factor=1.2)
-        
-        # Tăng độ nét
-        image = self.enhance_sharpness(image, factor=1.3)
-        
-        return image
-
-# Các hàm gọi ngoài để tương thích với app.py của nhóm
-def load_and_normalize(uploaded_file, max_size=1024) -> np.ndarray:
-    preprocessor = ImagePreprocessor(max_size=max_size)
-    return preprocessor.load_and_normalize(uploaded_file)
-
-def load_image(uploaded_file) -> Image.Image:
-    return ImagePreprocessor.load_image(uploaded_file)
+        return self.enhance_sharpness(image, factor=1.3)
+    
+    def process_invoice_image(self, image: Image.Image, target_size: int = 1280) -> Image.Image:
+        # Luồng TỐI ƯU cho dataset hóa đơn SROIE
+        image.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+        image = self.convert_to_grayscale(image)
+        image = self.enhance_contrast(image, factor=1.4)
+        image = self.enhance_sharpness(image, factor=1.8)
+        return self.denoise(image, size=3)
+    
+    def process_invoice_image_aggressive(self, image: Image.Image, target_size: int = 1280) -> Image.Image:
+        # Luồng CỰC MẠNH dùng cho hóa đơn mờ, nhòe, thiếu sáng nặng
+        image.thumbnail((target_size, target_size), Image.Resampling.LANCZOS)
+        image = self.convert_to_grayscale(image)
+        image = self.enhance_contrast(image, factor=1.6)
+        image = self.enhance_sharpness(image, factor=2.2)
+        image = self.denoise(image, size=5)
+        return self.enhance_contrast(image, factor=1.3)
