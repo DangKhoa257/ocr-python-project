@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+
+results/
+dataset/
+
+*.csv
+*.zip
+*.jpg
+*.jpeg
+*.png
+
+.env
+.venv/
+venv/
