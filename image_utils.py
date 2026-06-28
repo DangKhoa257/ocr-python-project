@@ -1,152 +1,122 @@
+from PIL import Image, ImageEnhance
+import numpy as np
+from typing import Tuple, Optional, Union
 import streamlit as st
-import csv
-import io
-from typing import Union, List, Dict, Any
 
 # ------------------- HÀM CŨ (GIỮ NGUYÊN) -------------------
-def create_download_button(text: str):
+def load_image(uploaded_file) -> Image.Image:
     """
-    Tạo nút tải xuống file .txt với tên mặc định.
+    HÀM CŨ: Trả về ảnh PIL dạng RGB từ file upload.
     """
-    if not text or not text.strip():
-        st.warning("Không có dữ liệu để tải xuống!")
-        return
+    try:
+        return Image.open(uploaded_file).convert("RGB")
+    except Exception as e:
+        st.error(f"Lỗi khi đọc ảnh: {e}")
+        return None
 
-    st.download_button(
-        label="📥 Tải kết quả về file .txt",
-        data=text,
-        file_name="ket_qua_ocr.txt",
-        mime="text/plain"
-    )
+def load_and_normalize(uploaded_file, max_size: int = 1024) -> Optional[np.ndarray]:
+    """
+    HÀM CŨ: Resize ảnh giữ tỉ lệ và chuẩn hóa về mảng numpy [0, 1].
+    """
+    try:
+        image = Image.open(uploaded_file).convert("RGB")
+        image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        img_array = np.array(image)
+        normalized_array = img_array / 255.0
+        return normalized_array
+    except Exception as e:
+        st.error(f"Lỗi khi xử lý ảnh: {e}")
+        return None
 
-def create_download_button_custom(text: str, filename: str):
+# ------------------- HÀM MỚI: KIỂM TRA -------------------
+def validate_image(image: Image.Image) -> Tuple[bool, str]:
     """
-    Tạo nút tải xuống file với tên tuỳ chỉnh.
+    Kiểm tra tính hợp lệ của ảnh PIL trước khi đưa vào OCR.
+    Trả về (True, "OK") nếu hợp lệ, ngược lại (False, "Lý do").
     """
-    if not text or not text.strip():
-        st.warning("Không có dữ liệu để tải xuống!")
-        return
+    if image is None:
+        return False, "Ảnh rỗng (None)"
+    
+    # Kiểm tra kích thước tối thiểu (tránh ảnh quá nhỏ)
+    width, height = image.size
+    if width < 50 or height < 50:
+        return False, f"Ảnh quá nhỏ ({width}x{height}), cần ít nhất 50x50 pixel"
+    
+    # Kiểm tra số kênh màu (chỉ chấp nhận RGB hoặc grayscale)
+    if image.mode not in ["RGB", "L"]:
+        return False, f"Định dạng màu {image.mode} không được hỗ trợ, cần RGB hoặc grayscale"
+    
+    return True, "OK"
 
-    st.download_button(
-        label=f"📥 Tải {filename}",
-        data=text,
-        file_name=filename,
-        mime="text/plain"
-    )
+def is_valid_uploaded_file(uploaded_file) -> bool:
+    """
+    Kiểm tra file upload có phải ảnh hợp lệ không (dựa trên tên và loại MIME).
+    """
+    if uploaded_file is None:
+        return False
+    # Kiểm tra extension
+    allowed_extensions = ["jpg", "jpeg", "png", "bmp", "tiff", "webp"]
+    file_extension = uploaded_file.name.split(".")[-1].lower()
+    if file_extension not in allowed_extensions:
+        st.warning(f"File {uploaded_file.name} có đuôi không hỗ trợ. Hỗ trợ: {', '.join(allowed_extensions)}")
+        return False
+    
+    # Kiểm tra MIME type (nếu có)
+    if hasattr(uploaded_file, 'type') and uploaded_file.type:
+        if not uploaded_file.type.startswith("image/"):
+            st.warning(f"File {uploaded_file.name} không phải định dạng ảnh (MIME: {uploaded_file.type})")
+            return False
+    return True
 
-# ------------------- HÀM MỚI: CHUẨN HÓA DỮ LIỆU -------------------
-def _normalize_data(data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+# ------------------- HÀM MỚI: LOAD TỪ ĐƯỜNG DẪN -------------------
+def load_image_from_path(file_path: str) -> Optional[Image.Image]:
     """
-    Chuyển đầu vào thành list các dict chứa các trường:
-    image_name, ocr_text, company, date, address, total.
+    Tải ảnh từ đường dẫn local (dùng cho batch xử lý hoặc test).
     """
-    if isinstance(data, dict):
-        return [data]
-    if isinstance(data, list):
-        return data
-    return []
+    try:
+        image = Image.open(file_path).convert("RGB")
+        return image
+    except FileNotFoundError:
+        st.error(f"Không tìm thấy file: {file_path}")
+    except Exception as e:
+        st.error(f"Lỗi khi đọc ảnh từ {file_path}: {e}")
+    return None
 
-# ------------------- HÀM MỚI: ĐỊNH DẠNG CHUỖI -------------------
-def format_ocr_data_to_txt(data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> str:
+# ------------------- HÀM MỚI: TIỀN XỬ LÝ CHO OCR -------------------
+def preprocess_for_ocr(image: Image.Image, 
+                       grayscale: bool = True, 
+                       enhance_contrast: float = 1.5) -> Image.Image:
     """
-    Chuyển dữ liệu OCR thành chuỗi văn bản TXT.
+    Tiền xử lý ảnh để tăng chất lượng OCR.
+    - grayscale: Chuyển sang ảnh xám (giảm nhiễu màu).
+    - enhance_contrast: Tăng độ tương phản (hệ số > 1).
     """
-    records = _normalize_data(data)
-    if not records:
-        return ""
+    if image is None:
+        return None
+    
+    # Chuyển sang grayscale nếu cần
+    if grayscale and image.mode != "L":
+        image = image.convert("L")
+    elif not grayscale and image.mode != "RGB":
+        image = image.convert("RGB")
+    
+    # Tăng độ tương phản
+    if enhance_contrast != 1.0:
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(enhance_contrast)
+    
+    return image
 
-    lines = []
-    for idx, rec in enumerate(records, 1):
-        lines.append(f"Hóa đơn #{idx}")
-        lines.append(f"Tên ảnh    : {rec.get('image_name', '')}")
-        lines.append(f"Công ty     : {rec.get('company', '')}")
-        lines.append(f"Ngày        : {rec.get('date', '')}")
-        lines.append(f"Địa chỉ     : {rec.get('address', '')}")
-        lines.append(f"Tổng tiền   : {rec.get('total', '')}")
-        lines.append(f"Văn bản OCR :\n{rec.get('ocr_text', '')}")
-        lines.append("---")
-    return "\n".join(lines)
-
-def format_ocr_data_to_csv(data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> str:
+def get_image_info(image: Image.Image) -> dict:
     """
-    Chuyển dữ liệu OCR thành chuỗi CSV (có header).
+    Lấy thông tin cơ bản của ảnh (để hiển thị lên UI hoặc log).
     """
-    records = _normalize_data(data)
-    if not records:
-        return ""
-
-    output = io.StringIO()
-    fieldnames = ["image_name", "company", "date", "address", "total", "ocr_text"]
-    writer = csv.DictWriter(output, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
-    writer.writeheader()
-    for rec in records:
-        row = {field: rec.get(field, "") for field in fieldnames}
-        writer.writerow(row)
-    return output.getvalue()
-
-# ------------------- HÀM MỚI: NÚT TẢI XUỐNG TRONG STREAMLIT -------------------
-def create_download_button_txt(data: Union[Dict[str, Any], List[Dict[str, Any]]],
-                               filename: str = "ket_qua_ocr.txt"):
-    """
-    Tạo nút tải TXT từ dữ liệu OCR.
-    """
-    text = format_ocr_data_to_txt(data)
-    if not text.strip():
-        st.warning("Không có dữ liệu để tải xuống!")
-        return
-    st.download_button(
-        label=f"📥 Tải {filename}",
-        data=text,
-        file_name=filename,
-        mime="text/plain"
-    )
-
-def create_download_button_csv(data: Union[Dict[str, Any], List[Dict[str, Any]]],
-                               filename: str = "ket_qua_ocr.csv"):
-    """
-    Tạo nút tải CSV từ dữ liệu OCR.
-    """
-    csv_data = format_ocr_data_to_csv(data)
-    if not csv_data.strip():
-        st.warning("Không có dữ liệu để tải xuống!")
-        return
-    st.download_button(
-        label=f"📥 Tải {filename}",
-        data=csv_data,
-        file_name=filename,
-        mime="text/csv"
-    )
-
-# ------------------- HÀM TỔNG QUÁT (TIỆN LỢI) -------------------
-def create_download_button_general(data: Union[Dict[str, Any], List[Dict[str, Any]]],
-                                   format_type: str = "txt",
-                                   filename: str = None):
-    """
-    Tạo nút tải với định dạng được chỉ định ('txt' hoặc 'csv').
-    """
-    if format_type.lower() == "txt":
-        if filename is None:
-            filename = "ket_qua_ocr.txt"
-        create_download_button_txt(data, filename)
-    elif format_type.lower() == "csv":
-        if filename is None:
-            filename = "ket_qua_ocr.csv"
-        create_download_button_csv(data, filename)
-    else:
-        st.error("Định dạng không hỗ trợ. Chỉ hỗ trợ 'txt' hoặc 'csv'.")
-
-# ------------------- (TUỲ CHỌN) TEST NHANH -------------------
-if __name__ == "__main__":
-    # Chạy thử nếu file được thực thi trực tiếp
-    test_data = {
-        "image_name": "test.jpg",
-        "ocr_text": "Đây là văn bản OCR",
-        "company": "Công ty XYZ",
-        "date": "01/01/2025",
-        "address": "Hà Nội",
-        "total": "1,000,000 VND"
+    if image is None:
+        return {}
+    return {
+        "size": image.size,
+        "mode": image.mode,
+        "format": image.format,
+        "width": image.width,
+        "height": image.height,
     }
-    print("--- TXT ---")
-    print(format_ocr_data_to_txt(test_data))
-    print("\n--- CSV ---")
-    print(format_ocr_data_to_csv(test_data))
