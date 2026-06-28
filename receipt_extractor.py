@@ -1,20 +1,49 @@
 import re
-from text_utils import normalize_text
 
+
+# ===========================
+# Chuẩn hóa văn bản
+# ===========================
+
+def normalize_text(text):
+    """
+    Làm sạch văn bản OCR.
+    """
+    if text is None:
+        return ""
+
+    text = text.replace("\r", "\n")
+
+    lines = []
+
+    for line in text.split("\n"):
+        line = line.strip()
+
+        if line:
+            lines.append(line)
+
+    return "\n".join(lines)
+
+
+# ===========================
+# Chuẩn hóa số tiền
+# ===========================
 
 def normalize_amount(value):
     """
-    Chuẩn hóa tiền:
-    9,00 -> 9.00
+    Ví dụ:
     RM 9.00 -> 9.00
+    9,00 -> 9.00
+    1,299.50 -> 1299.50
     """
 
-    if not value:
+    if value is None:
         return ""
 
     value = value.upper()
 
     value = value.replace("RM", "")
+    value = value.replace("MYR", "")
     value = value.replace("$", "")
     value = value.strip()
 
@@ -26,8 +55,12 @@ def normalize_amount(value):
     elif "," in value and "." in value:
         value = value.replace(",", "")
 
-    return value
+    return value.strip()
 
+
+# ===========================
+# Chuẩn hóa ngày
+# ===========================
 
 def normalize_date(date_text):
     """
@@ -35,7 +68,7 @@ def normalize_date(date_text):
     12-01-19 -> 12/01/2019
     """
 
-    if not date_text:
+    if date_text is None:
         return ""
 
     date_text = date_text.replace("-", "/")
@@ -54,54 +87,84 @@ def normalize_date(date_text):
     return f"{day.zfill(2)}/{month.zfill(2)}/{year}"
 
 
+# ===========================
+# Trích xuất tên cửa hàng
+# ===========================
+
 def extract_company(ocr_text):
+
     text = normalize_text(ocr_text)
 
     lines = text.split("\n")
 
-    ignore = [
+    blacklist = [
         "receipt",
         "invoice",
         "tax invoice",
-        "total",
         "cash",
-        "thank"
+        "thank",
+        "date",
+        "time",
+        "total"
     ]
 
     for line in lines[:5]:
 
-        low = line.lower()
+        lower = line.lower()
 
-        if any(word in low for word in ignore):
+        if any(word in lower for word in blacklist):
             continue
 
-        if len(line) > 3:
+        if len(line) >= 3:
             return line
 
     return ""
 
 
+# ===========================
+# Trích xuất ngày
+# ===========================
+
 def extract_date(ocr_text):
 
-    pattern = r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
+    patterns = [
 
-    match = re.search(pattern, ocr_text)
+        r"\d{1,2}[/-]\d{1,2}[/-]\d{4}",
 
-    if match:
-        return normalize_date(match.group())
+        r"\d{1,2}[/-]\d{1,2}[/-]\d{2}"
+
+    ]
+
+    for pattern in patterns:
+
+        match = re.search(pattern, ocr_text)
+
+        if match:
+            return normalize_date(match.group())
 
     return ""
 
+
+# ===========================
+# Trích xuất tổng tiền
+# ===========================
 
 def extract_total(ocr_text):
 
     text = ocr_text.upper()
 
     patterns = [
-        r"TOTAL\s*:?\s*(RM\s*)?([\d,]+\.\d{2})",
+
         r"GRAND TOTAL\s*:?\s*(RM\s*)?([\d,]+\.\d{2})",
+
+        r"TOTAL\s*:?\s*(RM\s*)?([\d,]+\.\d{2})",
+
         r"AMOUNT\s*:?\s*(RM\s*)?([\d,]+\.\d{2})",
-        r"TOTAL\s*:?\s*(RM\s*)?([\d,]+,\d{2})",
+
+        r"NETT\s*:?\s*(RM\s*)?([\d,]+\.\d{2})",
+
+        r"TOTAL\s*:?\s*(RM\s*)?([\d,]+,\d{2})"
+
     ]
 
     for pattern in patterns:
@@ -111,13 +174,18 @@ def extract_total(ocr_text):
         if match:
             return normalize_amount(match.group(2))
 
-    numbers = re.findall(r"[\d,]+\.\d{2}|[\d,]+,\d{2}", text)
+    # Nếu không tìm thấy TOTAL thì lấy số tiền cuối cùng
+    amounts = re.findall(r"[\d,]+\.\d{2}|[\d,]+,\d{2}", text)
 
-    if numbers:
-        return normalize_amount(numbers[-1])
+    if amounts:
+        return normalize_amount(amounts[-1])
 
     return ""
 
+
+# ===========================
+# Trích xuất địa chỉ
+# ===========================
 
 def extract_address(ocr_text):
 
@@ -125,16 +193,28 @@ def extract_address(ocr_text):
 
     lines = text.split("\n")
 
+    if len(lines) <= 1:
+        return ""
+
     address = []
 
     for line in lines[1:6]:
 
-        low = line.lower()
+        lower = line.lower()
 
-        if "tel" in low:
+        if "tel" in lower:
             break
 
-        if "total" in low:
+        if "phone" in lower:
+            break
+
+        if "date" in lower:
+            break
+
+        if "time" in lower:
+            break
+
+        if "total" in lower:
             break
 
         if re.search(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}", line):
@@ -143,3 +223,25 @@ def extract_address(ocr_text):
         address.append(line)
 
     return ", ".join(address)
+
+
+# ===========================
+# Test
+# ===========================
+
+if __name__ == "__main__":
+
+    sample = """
+    ABC MART SDN BHD
+    123 Jalan Bukit
+    Kuala Lumpur
+
+    Date: 25-12-2018
+
+    TOTAL RM 9,00
+    """
+
+    print("Company :", extract_company(sample))
+    print("Address :", extract_address(sample))
+    print("Date    :", extract_date(sample))
+    print("Total   :", extract_total(sample))
