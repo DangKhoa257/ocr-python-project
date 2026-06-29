@@ -1,15 +1,20 @@
 import os
 import json
 import csv
+from pathlib import Path
 from PIL import Image
 from ocr_engine import extract_text
 from preprocess import ImagePreprocessor
 
-# Đường dẫn dataset (đã cập nhật đúng máy bạn)
-IMG_DIR = r"C:\Users\Admin\Downloads\archive\SROIE2019\train\img"
-ENTITIES_DIR = r"C:\Users\Admin\Downloads\archive\SROIE2019\train\entities"
-OUTPUT_DIR = "results"
-OUTPUT_CSV = os.path.join(OUTPUT_DIR, "ocr_results.csv")
+# ===== CẤU HÌNH ĐƯỜNG DẪN =====
+# Cập nhật BASE_PATH cho phù hợp 
+BASE_PATH = Path(r"C:\Users\Admin\Downloads\archive\SROIE2019\train")
+
+IMG_DIR = BASE_PATH / "img"
+ENTITIES_DIR = BASE_PATH / "entities"
+OUTPUT_DIR = Path("results")
+OUTPUT_CSV = OUTPUT_DIR / "ocr_results.csv"
+# ================================
 
 def read_entities(entities_path):
     try:
