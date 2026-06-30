@@ -1,16 +1,13 @@
-import re
+﻿import re
 
 
 def clean_text(text):
-    """
-    Xóa khoảng trắng dư thừa và dòng trống.
-    """
+    """Xóa khoảng trắng dư thừa và dòng trống."""
     lines = text.split("\n")
     clean_lines = []
 
     for line in lines:
         line = line.strip()
-
         if line:
             clean_lines.append(line)
 
@@ -18,9 +15,7 @@ def clean_text(text):
 
 
 def normalize_text(text):
-    """
-    Chuẩn hóa văn bản OCR.
-    """
+    """Chuẩn hóa văn bản OCR."""
     if text is None:
         return ""
 
@@ -49,11 +44,10 @@ def text_statistics(text):
     return {
         "characters": count_characters(text),
         "words": count_words(text),
-        "lines": count_lines(text)
+        "lines": count_lines(text),
     }
 
 
-# Chạy thử
 if __name__ == "__main__":
     sample_text = """
         Hello World

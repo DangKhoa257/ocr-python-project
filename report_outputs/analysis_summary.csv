@@ -1,0 +1,9 @@
+﻿metric,value
+total_receipts,626.0
+avg_num_characters,644.31
+avg_num_words,111.88
+avg_num_lines,7.14
+date_accuracy,59.42
+total_accuracy,27.16
+company_accuracy,5.11
+address_accuracy,4.63
